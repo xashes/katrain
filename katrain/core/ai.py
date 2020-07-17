@@ -189,6 +189,7 @@ def request_ai_analysis(game: Game, cn: GameNode, extra_settings: Dict) -> Optio
 def generate_ai_move(game: Game, ai_mode: str, ai_settings: Dict) -> Tuple[Move, GameNode]:
     cn = game.current_node
 
+    handicap_analysis = wide_root_noise_analysis = {}
     if ai_mode == AI_HANDICAP:
         pda = ai_settings["pda"]
         if ai_settings["automatic"]:
@@ -202,6 +203,9 @@ def generate_ai_move(game: Game, ai_mode: str, ai_settings: Dict) -> Tuple[Move,
         if not handicap_analysis:
             game.katrain.log(f"Error getting handicap-based move", OUTPUT_ERROR)
             ai_mode = AI_DEFAULT
+
+    if ai_mode == AI_RANK and ai_settings.get("score_based", False):
+        wide_root_noise_analysis = request_ai_analysis(game, cn, {"wideRootNoise": 1.0})
 
     while not cn.analysis_ready:
         time.sleep(0.01)
@@ -254,10 +258,7 @@ def generate_ai_move(game: Game, ai_mode: str, ai_settings: Dict) -> Tuple[Move,
                     policy_moves, ai_settings["lower_bound"], ai_settings["weaken_fac"]
                 )
             elif ai_mode in AI_STRATEGIES_PICK:
-
-                if ai_mode != AI_RANK:
-                    n_moves = max(1, int(ai_settings["pick_frac"] * len(legal_policy_moves) + ai_settings["pick_n"]))
-                else:
+                if ai_mode == AI_RANK:
                     orig_calib_avemodrank = 0.063015 + 0.7624 * board_squares / (
                         10 ** (-0.05737 * ai_settings["kyu_rank"] + 1.9482)
                     )
@@ -280,30 +281,48 @@ def generate_ai_move(game: Game, ai_mode: str, ai_settings: Dict) -> Tuple[Move,
                     ) * orig_calib_avemodrank
                     n_moves = board_squares * norm_leg_moves / (1.31165 * (modified_calib_avemodrank + 1) - 0.082653)
                     n_moves = max(1, round(n_moves))
-
-                if ai_mode in [AI_INFLUENCE, AI_TERRITORY, AI_LOCAL, AI_TENUKI]:
-                    if cn.depth > ai_settings["endgame"] * board_squares:
-                        weighted_coords = [(pol, 1, *mv.coords) for pol, mv in legal_policy_moves]
-                        x_ai_thoughts = (
-                            f"Generated equal weights as move number >= {ai_settings['endgame'] * size[0] * size[1]}. "
-                        )
-                        n_moves = int(max(n_moves, len(legal_policy_moves) // 2))
-                    elif ai_mode in [AI_INFLUENCE, AI_TERRITORY]:
-                        weighted_coords, x_ai_thoughts = generate_influence_territory_weights(
-                            ai_mode, ai_settings, policy_grid, size
-                        )
-                    else:  # ai_mode in [AI_LOCAL, AI_TENUKI]
-                        weighted_coords, x_ai_thoughts = generate_local_tenuki_weights(
-                            ai_mode, ai_settings, policy_grid, cn, size
-                        )
-                    ai_thoughts += x_ai_thoughts
-                else:  # ai_mode in [AI_PICK, AI_RANK]:
-                    weighted_coords = [
-                        (policy_grid[y][x], 1, x, y)
-                        for x in range(size[0])
-                        for y in range(size[1])
-                        if policy_grid[y][x] > 0
-                    ]
+                    if ai_settings.get("score_based", False):
+                        root_score = wide_root_noise_analysis["rootInfo"]["scoreLead"]
+                        point_loss = {
+                            d["move"]: GameNode.player_sign(cn.next_player) * (root_score - d["scoreLead"])
+                            for d in wide_root_noise_analysis["moveInfos"]
+                        }
+                        weighted_coords = [
+                            ((-point_loss.get(Move(coords=(x, y)).gtp(), 50), policy_grid[y][x]), 1, x, y)
+                            for x in range(size[0])
+                            for y in range(size[1])
+                            if policy_grid[y][x] > 0
+                        ]
+                    else:
+                        weighted_coords = [
+                            (policy_grid[y][x], 1, x, y)
+                            for x in range(size[0])
+                            for y in range(size[1])
+                            if policy_grid[y][x] > 0
+                        ]
+                else:
+                    n_moves = max(1, int(ai_settings["pick_frac"] * len(legal_policy_moves) + ai_settings["pick_n"]))
+                    if ai_mode in [AI_INFLUENCE, AI_TERRITORY, AI_LOCAL, AI_TENUKI]:
+                        if cn.depth > ai_settings["endgame"] * board_squares:
+                            weighted_coords = [(pol, 1, *mv.coords) for pol, mv in legal_policy_moves]
+                            x_ai_thoughts = f"Generated equal weights as move number >= {ai_settings['endgame'] * size[0] * size[1]}. "
+                            n_moves = int(max(n_moves, len(legal_policy_moves) // 2))
+                        elif ai_mode in [AI_INFLUENCE, AI_TERRITORY]:
+                            weighted_coords, x_ai_thoughts = generate_influence_territory_weights(
+                                ai_mode, ai_settings, policy_grid, size
+                            )
+                        else:  # ai_mode in [AI_LOCAL, AI_TENUKI]
+                            weighted_coords, x_ai_thoughts = generate_local_tenuki_weights(
+                                ai_mode, ai_settings, policy_grid, cn, size
+                            )
+                        ai_thoughts += x_ai_thoughts
+                    else:  # ai_mode in [AI_PICK, AI_RANK]:
+                        weighted_coords = [
+                            (policy_grid[y][x], 1, x, y)
+                            for x in range(size[0])
+                            for y in range(size[1])
+                            if policy_grid[y][x] > 0
+                        ]
 
                 pick_moves = weighted_selection_without_replacement(weighted_coords, n_moves)
                 ai_thoughts += f"Picked {min(n_moves,len(weighted_coords))} random moves according to weights. "
@@ -313,8 +332,13 @@ def generate_ai_move(game: Game, ai_mode: str, ai_settings: Dict) -> Tuple[Move,
                         (p, Move((x, y), player=cn.next_player)) for p, wt, x, y in heapq.nlargest(5, pick_moves)
                     ]
                     aimove = new_top[0][1]
-                    ai_thoughts += f"Top 5 among these were {fmt_moves(new_top)} and picked top {aimove.gtp()}. "
-                    if new_top[0][0] < pass_policy:
+                    if isinstance(new_top[0][0], Tuple):  # score-based calibrated rank
+                        ai_thoughts += f"Score-based pick strategy picked top move among these: {aimove.gtp()} (policy {new_top[0][0][1]:.2%} point loss {new_top[0][0][0]:.1f})"
+                        move_policy = new_top[0][0][1]
+                    else:
+                        ai_thoughts += f"Top 5 among these were {fmt_moves(new_top)} and picked top {aimove.gtp()}. "
+                        move_policy = new_top[0][0]
+                    if move_policy < pass_policy:
                         ai_thoughts += f"But found pass ({pass_policy:.2%} to be higher rated than {aimove.gtp()} ({new_top[0][0]:.2%}) so will play top policy move instead."
                         aimove = top_policy_move
                 else:

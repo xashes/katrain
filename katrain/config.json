@@ -16,7 +16,7 @@
         "anim_pv_time": 0.5,
         "debug_level": 0,
         "lang": "en",
-        "version": "1.3.0"
+        "version": "1.4.0"
     },
     "timer": {
         "byo_length": 30,
@@ -123,7 +123,8 @@
             "endgame": 0.4
         },
         "ai:p:rank": {
-            "kyu_rank": 4.0
+            "kyu_rank": 4.0,
+            "score_based": true
         }
     },
     "ui_state": {
