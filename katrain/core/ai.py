@@ -206,7 +206,7 @@ def request_forgetful_analysis(game: Game, cn: GameNode) -> Optional[Dict]:
     query = {
         "rules": engine.get_rules(cn),
         "priority": 1_000,
-        "analyzeTurns": [0],
+        "analyzeTurns": [0 if cn.player=='W' else 1],
         "maxVisits": engine.config["max_visits"],
         "komi": cn.komi,
         "boardXSize": size_x,
@@ -214,7 +214,7 @@ def request_forgetful_analysis(game: Game, cn: GameNode) -> Optional[Dict]:
         "includeOwnership": False,
         "includePolicy": False,
         "initialStones": [[m.player, m.gtp()] for m in game.stones],
-        "moves": [],
+        "moves": [] if cn.player=='W' else [['B','pass']],
     }
     engine.send_query(query, set_analysis, set_error, False)
 
@@ -252,13 +252,13 @@ def generate_ai_move(game: Game, ai_mode: str, ai_settings: Dict) -> Tuple[Move,
             aimove = Move.from_gtp(moveobj["move"], player=cn.next_player)
             try:
                 played_node = game.play(aimove)
-                ai_thoughts += f"Forgetful AI played top move without history {aimove.gtp()}. "
+                ai_thoughts += f"Forgetful AI played top move without history {aimove.gtp()}. (Data: {moveobj}) "
                 if aimove.gtp() != cn.candidate_moves[0]['move']:
                     ai_thoughts += f" This was different from the normal top move {cn.candidate_moves[0]['move']}!"
                 played_node.ai_thoughts = ai_thoughts
                 return aimove, played_node
             except IllegalMoveException as e:
-                ai_thoughts += f"Tried {aimove} but was illegal ({e}). "
+                ai_thoughts += f"Tried {aimove.gtp()} but was illegal ({e}). "
         ai_mode = AI_POLICY  # fallback in case all are illegal
 
     if (ai_mode in AI_STRATEGIES_POLICY) and cn.policy:  # pure policy based move
