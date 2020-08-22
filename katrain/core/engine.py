@@ -43,7 +43,7 @@ class KataGoEngine:
         self.stderr_thread = None
 
         exe = config.get("katago", "").strip()
-        if config.get("altcommand",""):
+        if config.get("altcommand", ""):
             self.command = config["altcommand"]
         else:
             if not exe:

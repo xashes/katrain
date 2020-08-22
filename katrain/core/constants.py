@@ -33,6 +33,7 @@ AI_TENUKI = "ai:p:tenuki"
 AI_INFLUENCE = "ai:p:influence"
 AI_TERRITORY = "ai:p:territory"
 AI_RANK = "ai:p:rank"
+AI_FORGETFUL = "ai:forgetful"
 
 AI_CONFIG_DEFAULT = AI_RANK
 
@@ -53,10 +54,12 @@ AI_STRATEGIES_RECOMMENDED_ORDER = [
     AI_TERRITORY,
     AI_INFLUENCE,
     AI_JIGO,
+    AI_FORGETFUL,
 ]
 
 AI_STRENGTH = {  # dan ranks, backup if model is missing. TODO: remove some?
     AI_DEFAULT: 9,
+    AI_FORGETFUL: 9,
     AI_POLICY: 5,
     AI_JIGO: float("nan"),
     AI_SCORELOSS: -4,

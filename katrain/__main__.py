@@ -119,7 +119,7 @@ class KaTrainGui(Screen, KaTrainBase):
         ) and getattr(self, "controls", None):
             self.controls.set_status(f"ERROR: {message}", STATUS_ERROR)
 
-    def animate_pondering(self,*_args):
+    def animate_pondering(self, *_args):
         if not self.idle_analysis:
             self.board_controls.engine_status_pondering = -1
         else:

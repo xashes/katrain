@@ -1,6 +1,7 @@
 {
     "engine": {
         "katago": "",
+        "altcommand": "",
         "model": "katrain/models/g170e-b15c192-s1672170752-d466197061.bin.gz",
         "config": "katrain/KataGo/analysis_config.cfg",
         "threads": 12,
@@ -70,6 +71,7 @@
     },
     "ai": {
         "ai:default": {},
+        "ai:forgetful": {},
         "ai:handicap": {
             "automatic": true,
             "pda": 0

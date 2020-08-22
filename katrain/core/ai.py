@@ -31,8 +31,9 @@ from katrain.core.constants import (
     AI_TERRITORY_ELO_GRID,
     AI_INFLUENCE_ELO_GRID,
     AI_PICK_ELO_GRID,
+    AI_FORGETFUL,
 )
-from katrain.core.game import Game, GameNode, Move
+from katrain.core.game import Game, GameNode, Move, IllegalMoveException
 from katrain.core.utils import var_to_grid
 
 
@@ -168,7 +169,7 @@ def request_ai_analysis(game: Game, cn: GameNode, extra_settings: Dict) -> Optio
 
     def set_error(a):
         nonlocal error
-        game.katrain.log("Error in PDA-based analysis", a)
+        game.katrain.log(f"Error in PDA-based analysis: {a}", OUTPUT_ERROR)
         error = True
 
     engine = game.engines[cn.player]
@@ -186,8 +187,46 @@ def request_ai_analysis(game: Game, cn: GameNode, extra_settings: Dict) -> Optio
     return analysis
 
 
+def request_forgetful_analysis(game: Game, cn: GameNode) -> Optional[Dict]:
+    error = False
+    analysis = None
+
+    def set_analysis(a):
+        nonlocal analysis
+        analysis = a
+
+    def set_error(a):
+        nonlocal error
+        game.katrain.log(f"Error in Forgetful analysis: {a}", OUTPUT_ERROR)
+        error = True
+
+    engine = game.engines[cn.player]
+    size_x, size_y = cn.board_size
+
+    query = {
+        "rules": engine.get_rules(cn),
+        "priority": 1_000,
+        "analyzeTurns": [0],
+        "maxVisits": engine.config["max_visits"],
+        "komi": cn.komi,
+        "boardXSize": size_x,
+        "boardYSize": size_y,
+        "includeOwnership": False,
+        "includePolicy": False,
+        "initialStones": [[m.player, m.gtp()] for m in game.stones],
+        "moves": [],
+    }
+    engine.send_query(query, set_analysis, set_error, False)
+
+    while not (error or analysis):
+        time.sleep(0.01)
+        engine.check_alive(exception_if_dead=True)
+    return analysis
+
+
 def generate_ai_move(game: Game, ai_mode: str, ai_settings: Dict) -> Tuple[Move, GameNode]:
     cn = game.current_node
+    ai_thoughts = ""
 
     if ai_mode == AI_HANDICAP:
         pda = ai_settings["pda"]
@@ -207,7 +246,21 @@ def generate_ai_move(game: Game, ai_mode: str, ai_settings: Dict) -> Tuple[Move,
         time.sleep(0.01)
         game.engines[cn.next_player].check_alive(exception_if_dead=True)
 
-    ai_thoughts = ""
+    if ai_mode == AI_FORGETFUL:
+        no_history_analysis = request_forgetful_analysis(game, cn)
+        for moveobj in no_history_analysis["moveInfos"]:
+            aimove = Move.from_gtp(moveobj["move"], player=cn.next_player)
+            try:
+                played_node = game.play(aimove)
+                ai_thoughts += f"Forgetful AI played top move without history {aimove.gtp()}. "
+                if aimove.gtp() != cn.candidate_moves[0]['move']:
+                    ai_thoughts += f" This was different from the normal top move {cn.candidate_moves[0]['move']}!"
+                played_node.ai_thoughts = ai_thoughts
+                return aimove, played_node
+            except IllegalMoveException as e:
+                ai_thoughts += f"Tried {aimove} but was illegal ({e}). "
+        ai_mode = AI_POLICY  # fallback in case all are illegal
+
     if (ai_mode in AI_STRATEGIES_POLICY) and cn.policy:  # pure policy based move
         policy_moves = cn.policy_ranking
         pass_policy = cn.policy[-1]
