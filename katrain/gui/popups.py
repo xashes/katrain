@@ -10,8 +10,10 @@ from kivy.metrics import dp
 from kivy.properties import BooleanProperty, ListProperty, NumericProperty, ObjectProperty, StringProperty
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.dropdown import DropDown
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
+from kivy.uix.spinner import SpinnerOption
 from kivy.utils import platform
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -373,14 +375,32 @@ class ConfigAIPopup(QuickConfigGui):
         Clock.schedule_once(self.katrain.controls.update_players, 0)
 
 
+class TextBoxHelperOption(SpinnerOption):
+    value = StringProperty('')
+    def __init__(self,text,value,**args):
+        super.__init__(**args)
+        self.value = value
+        self.text = text
+
+class TextBoxHelperDropDown(DropDown):
+    values = ListProperty([])
+
+    def on_values(self,*args):
+        self.clear_widgets()
+        for val,desc in self.values:
+            self.add_widget(TextBoxHelperOption(desc,val))
+
+
 class ConfigPopup(QuickConfigGui):
     def __init__(self, katrain):
         super().__init__(katrain)
         self.paths = [self.katrain.config("engine/model"), "katrain/models", "~/.katrain"]
         self.katago_paths = [self.katrain.config("engine/katago"), "~/.katrain"]
+        self.katago_files = TextBoxHelperDropDown()
         Clock.schedule_once(self.check_katas)
         MDApp.get_running_app().bind(language=self.check_models)
         MDApp.get_running_app().bind(language=self.check_katas)
+
 
     def build_and_set_properties(self, *_args):
         super().build_and_set_properties()
