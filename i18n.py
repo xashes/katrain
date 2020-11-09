@@ -14,7 +14,7 @@ strings_to_langs = defaultdict(dict)
 strings_to_keys = defaultdict(dict)
 lang_to_strings = defaultdict(set)
 
-DEFAULT_LANG = "en"
+DEFAULT_LANG = "cn"
 
 errors = False
 
