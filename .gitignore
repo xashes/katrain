@@ -151,3 +151,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+katrain/KataGo/g170e-b15c192-s1672170752-d466197061.bin.gz
+playground.ipynb
